@@ -50,7 +50,7 @@ const server = new SMTPServer({
         console.log("📎 Attachments:", parsed.attachments ? parsed.attachments.map(a => a.filename) : "None");
 
         // Send email data to webhook
-        await axios.post("https://your-webhook-url.com/incoming-email", {
+        await axios.post("https://ngrok.doerkit.dev/webhook", {
           from: parsed.from?.text || "Unknown Sender",
           to: parsed.to?.text || "Unknown Recipient",
           subject: parsed.subject || "No Subject",
