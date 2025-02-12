@@ -25,8 +25,9 @@ const server = new SMTPServer({
     });
 
     stream.on("end", async () => {
-      console.log("📩 Received raw email data:");
+      console.log("\n📩 Received Raw Email Data (Before Parsing):\n");
       console.log(emailData);
+      console.log("====================================\n");
 
       if (!emailData.trim()) {
         console.error("❌ Email body is empty, rejecting...");
