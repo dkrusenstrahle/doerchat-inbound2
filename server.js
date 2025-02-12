@@ -1,11 +1,12 @@
 const { SMTPServer } = require("smtp-server");
 const { simpleParser } = require("mailparser");
 const axios = require("axios");
+const fs = require("fs");
 
 const server = new SMTPServer({
   logger: true,
-  disableStartTLS: true,
-  authOptional: true,
+  disableStartTLS: true, // No TLS for now
+  authOptional: true, // Allow without authentication
 
   onData(stream, session, callback) {
     let emailData = "";
@@ -17,31 +18,37 @@ const server = new SMTPServer({
     stream.on("end", async () => {
       try {
         const parsed = await simpleParser(emailData);
-
-        console.log("=== 📩 Incoming Email ===");
-        console.log("📨 From:", parsed.from?.text || "Unknown Sender");
-        console.log("📬 To:", parsed.to?.text || "Unknown Recipient");
-        console.log("📌 Subject:", parsed.subject || "No Subject");
-
-        // Extract user account from the recipient email
-        const toEmail = parsed.to?.text || "";
-        const match = toEmail.match(/(\w+)@mail2\.doerkit\.com/);
-        const accountId = match ? match[1] : "unknown";
+        
+        // Extract everything before '@' from recipient email
+        const toEmail = parsed.to?.value?.[0]?.address || ""; // Get first recipient
+        const accountId = toEmail.split("@")[0] || "unknown"; // Get part before '@'
 
         console.log(`✅ Matched Account ID: ${accountId}`);
 
-        // Send parsed email data to a webhook or database
+        // Process attachments
+        let attachmentData = [];
+        if (parsed.attachments && parsed.attachments.length > 0) {
+          parsed.attachments.forEach((attachment) => {
+            const filePath = `/tmp/${attachment.filename}`;
+            fs.writeFileSync(filePath, attachment.content); // Save to disk
+            attachmentData.push({
+              filename: attachment.filename,
+              size: attachment.size,
+              path: filePath, // Provide file path
+              mimeType: attachment.contentType,
+            });
+          });
+        }
+
+        // Send email data to webhook
         await axios.post("https://ngrok.doerkit.dev/webhook_email", {
-          account_id: accountId, // Identify the user
+          account_id: accountId, // Identify user
           from: parsed.from?.text || "Unknown Sender",
           to: parsed.to?.text || "Unknown Recipient",
           subject: parsed.subject || "No Subject",
           text: parsed.text || "No Text Content",
           html: parsed.html || "No HTML Content",
-          attachments: parsed.attachments ? parsed.attachments.map(a => ({
-            filename: a.filename,
-            size: a.size
-          })) : []
+          attachments: attachmentData, // Send attachment details
         });
 
         console.log("✅ Email successfully processed and sent to webhook.");
