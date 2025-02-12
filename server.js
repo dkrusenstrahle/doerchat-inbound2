@@ -37,6 +37,7 @@ const server = new SMTPServer({
 });
 
 // Start listening on port 25
-server.listen(25, () => {
+server.listen(25, "0.0.0.0", () => {
   console.log("SMTP Server listening on port 25...");
 });
+
