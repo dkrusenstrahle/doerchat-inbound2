@@ -1,21 +1,9 @@
 const { SMTPServer } = require("smtp-server");
-const { simpleParser } = require("mailparser");
-const axios = require("axios");
 
 const server = new SMTPServer({
   logger: true,
   disableStartTLS: true, // No encryption for now
   authOptional: true, // Allow emails without authentication
-
-  onAuth(auth, session, callback) {
-    console.log("🔹 Authentication not required, allowing mail...");
-    return callback(null, { user: "anonymous" });
-  },
-
-  onConnect(session, callback) {
-    console.log(`📡 New connection from: ${session.remoteAddress}`);
-    callback(); // Accept all connections
-  },
 
   onData(stream, session, callback) {
     let emailData = "";
@@ -24,51 +12,12 @@ const server = new SMTPServer({
       emailData += chunk.toString();
     });
 
-    stream.on("end", async () => {
-      console.log("\n📩 Received Raw Email Data (Before Parsing):\n");
+    stream.on("end", () => {
+      console.log("\n📩 Received Raw Email Data:\n");
       console.log(emailData);
-      console.log("====================================\n");
+      console.log("\n====================================\n");
 
-      if (!emailData.trim()) {
-        console.error("❌ Email body is empty, rejecting...");
-        return callback(new Error("Email body is empty"));
-      }
-
-      try {
-        const parsed = await simpleParser(emailData);
-
-        if (!parsed || !parsed.from || !parsed.to || !parsed.subject) {
-          console.error("❌ Parsed email is incomplete, rejecting...");
-          return callback(new Error("Email parsing failed"));
-        }
-
-        console.log("=== 📩 Incoming Email ===");
-        console.log("📨 From:", parsed.from?.text || "Unknown Sender");
-        console.log("📬 To:", parsed.to?.text || "Unknown Recipient");
-        console.log("📌 Subject:", parsed.subject || "No Subject");
-        console.log("📝 Text Body:", parsed.text || "No Text Content");
-        console.log("🖥 HTML Body:", parsed.html || "No HTML Content");
-        console.log("📎 Attachments:", parsed.attachments ? parsed.attachments.map(a => a.filename) : "None");
-
-        // Send email data to webhook
-        await axios.post("https://ngrok.doerkit.dev/webhook", {
-          from: parsed.from?.text || "Unknown Sender",
-          to: parsed.to?.text || "Unknown Recipient",
-          subject: parsed.subject || "No Subject",
-          text: parsed.text || "No Text Content",
-          html: parsed.html || "No HTML Content",
-          attachments: parsed.attachments ? parsed.attachments.map(a => ({
-            filename: a.filename,
-            size: a.size
-          })) : []
-        });
-
-        console.log("✅ Email successfully processed and sent to webhook.");
-        callback(null); // Accept the email
-      } catch (err) {
-        console.error("❌ Error parsing email:", err);
-        callback(new Error("Email parsing failed"));
-      }
+      callback(null); // Accept the email
     });
   }
 });
