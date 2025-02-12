@@ -26,7 +26,7 @@ const server = new SMTPServer({
             filename: attachment.filename,
             size: attachment.size,
             mimeType: attachment.contentType,
-            content: attachment.content.toString("base64")
+            // content: attachment.content.toString("base64")
           }));
         }
 
@@ -34,7 +34,14 @@ const server = new SMTPServer({
           account_id: accountId,
           from: parsed.from?.text || "Unknown Sender",
           to: parsed.to?.text || "Unknown Recipient",
+          cc: parsed.cc?.value?.map(cc => cc.address) || [],
+          bcc: parsed.bcc?.value?.map(bcc => bcc.address) || [],
           subject: parsed.subject || "No Subject",
+          date: parsed.date || "Unknown Date",
+          messageId: parsed.messageId || "No Message ID",
+          replyTo: parsed.headers.get("reply-to") || "No Reply-To",
+          priority: parsed.headers.get("x-priority") || "Normal",
+          emailClient: parsed.headers.get("user-agent") || "Unknown Client",
           text: parsed.text || "No Text Content",
           html: parsed.html || "No HTML Content",
           attachments: attachmentData
