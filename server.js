@@ -1,13 +1,12 @@
 const { SMTPServer } = require("smtp-server");
 const { simpleParser } = require("mailparser");
+const axios = require("axios");
 
-// Create SMTP Server
 const server = new SMTPServer({
-  logger: true, // Enable logging for debugging
-  disableStartTLS: true, // Disable TLS (use real certs in production)
+  logger: true,
+  disableStartTLS: true, // No TLS (use a reverse proxy for security)
   onAuth(auth, session, callback) {
-    // Accept all users (disable authentication)
-    return callback(null, { user: auth.username });
+    return callback(null, { user: auth.username }); // Accept all emails
   },
   onData(stream, session, callback) {
     let emailData = "";
@@ -19,6 +18,7 @@ const server = new SMTPServer({
     stream.on("end", async () => {
       try {
         const parsed = await simpleParser(emailData);
+
         console.log("=== Incoming Email ===");
         console.log("From:", parsed.from.text);
         console.log("To:", parsed.to.text);
@@ -26,6 +26,19 @@ const server = new SMTPServer({
         console.log("Text Body:", parsed.text);
         console.log("HTML Body:", parsed.html);
         console.log("Attachments:", parsed.attachments.map(a => a.filename));
+
+        // Send email data to webhook
+        await axios.post("https://ngrok.doerkit.dev/webhook", {
+          from: parsed.from.text,
+          to: parsed.to.text,
+          subject: parsed.subject,
+          text: parsed.text,
+          html: parsed.html,
+          attachments: parsed.attachments.map(a => ({
+            filename: a.filename,
+            size: a.size
+          }))
+        });
 
         callback(null); // Accept the email
       } catch (err) {
@@ -40,4 +53,3 @@ const server = new SMTPServer({
 server.listen(25, "0.0.0.0", () => {
   console.log("SMTP Server listening on port 25...");
 });
-
