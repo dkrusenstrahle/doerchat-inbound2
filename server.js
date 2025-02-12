@@ -4,8 +4,8 @@ const axios = require("axios");
 
 const server = new SMTPServer({
   logger: true,
-  disableStartTLS: true, // No encryption for now
-  authOptional: true, // Allow emails without authentication
+  disableStartTLS: true,
+  authOptional: true,
 
   onData(stream, session, callback) {
     let emailData = "";
@@ -15,24 +15,24 @@ const server = new SMTPServer({
     });
 
     stream.on("end", async () => {
-      console.log("\n📩 Received Raw Email Data:\n");
-      console.log(emailData);
-      console.log("\n====================================\n");
-
       try {
-        // Parse email content
         const parsed = await simpleParser(emailData);
 
-        console.log("=== 📩 Parsed Email ===");
+        console.log("=== 📩 Incoming Email ===");
         console.log("📨 From:", parsed.from?.text || "Unknown Sender");
         console.log("📬 To:", parsed.to?.text || "Unknown Recipient");
         console.log("📌 Subject:", parsed.subject || "No Subject");
-        console.log("📝 Text Body:", parsed.text || "No Text Content");
-        console.log("🖥 HTML Body:", parsed.html || "No HTML Content");
-        console.log("📎 Attachments:", parsed.attachments ? parsed.attachments.map(a => a.filename) : "None");
 
-        // Send parsed email data to a webhook
-        await axios.post("https://ngrok.doerkit.dev/webhook_email", {
+        // Extract user account from the recipient email
+        const toEmail = parsed.to?.text || "";
+        const match = toEmail.match(/(\w+)@mail2\.doerkit\.com/);
+        const accountId = match ? match[1] : "unknown";
+
+        console.log(`✅ Matched Account ID: ${accountId}`);
+
+        // Send parsed email data to a webhook or database
+        await axios.post("https://your-webhook-url.com/incoming-email", {
+          account_id: accountId, // Identify the user
           from: parsed.from?.text || "Unknown Sender",
           to: parsed.to?.text || "Unknown Recipient",
           subject: parsed.subject || "No Subject",
@@ -45,7 +45,7 @@ const server = new SMTPServer({
         });
 
         console.log("✅ Email successfully processed and sent to webhook.");
-        callback(null); // Accept the email
+        callback(null);
       } catch (err) {
         console.error("❌ Error parsing email:", err);
         callback(new Error("Email parsing failed"));
@@ -54,7 +54,6 @@ const server = new SMTPServer({
   }
 });
 
-// Start listening on port 25
 server.listen(25, "0.0.0.0", () => {
   console.log("📡 SMTP Server listening on port 25...");
 });
