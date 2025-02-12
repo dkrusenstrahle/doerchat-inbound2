@@ -31,7 +31,7 @@ const server = new SMTPServer({
         console.log(`✅ Matched Account ID: ${accountId}`);
 
         // Send parsed email data to a webhook or database
-        await axios.post("https://your-webhook-url.com/incoming-email", {
+        await axios.post("https://ngrok.doerkit.dev/webhook_email", {
           account_id: accountId, // Identify the user
           from: parsed.from?.text || "Unknown Sender",
           to: parsed.to?.text || "Unknown Recipient",
