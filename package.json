@@ -1,0 +1,14 @@
+{
+  "name": "doerchat-inbound",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mailparser": "^3.7.2",
+    "smtp-server": "^3.13.6"
+  }
+}
