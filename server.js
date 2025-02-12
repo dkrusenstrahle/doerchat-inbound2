@@ -4,8 +4,8 @@ const axios = require("axios");
 
 const server = new SMTPServer({
   logger: true,
-  disableStartTLS: true, // No encryption
-  authOptional: true, // Allow incoming mail without authentication
+  disableStartTLS: true, // No encryption for now
+  authOptional: true, // Allow emails without authentication
 
   onAuth(auth, session, callback) {
     console.log("🔹 Authentication not required, allowing mail...");
@@ -25,17 +25,25 @@ const server = new SMTPServer({
     });
 
     stream.on("end", async () => {
+      console.log("📩 Received raw email data:");
+      console.log(emailData);
+
+      if (!emailData.trim()) {
+        console.error("❌ Email body is empty, rejecting...");
+        return callback(new Error("Email body is empty"));
+      }
+
       try {
         const parsed = await simpleParser(emailData);
 
         if (!parsed || !parsed.from || !parsed.to || !parsed.subject) {
-          console.error("❌ Parsed email data is incomplete or undefined.");
+          console.error("❌ Parsed email is incomplete, rejecting...");
           return callback(new Error("Email parsing failed"));
         }
 
         console.log("=== 📩 Incoming Email ===");
-        console.log("📨 From:", parsed.from ? parsed.from.text : "Unknown Sender");
-        console.log("📬 To:", parsed.to ? parsed.to.text : "Unknown Recipient");
+        console.log("📨 From:", parsed.from?.text || "Unknown Sender");
+        console.log("📬 To:", parsed.to?.text || "Unknown Recipient");
         console.log("📌 Subject:", parsed.subject || "No Subject");
         console.log("📝 Text Body:", parsed.text || "No Text Content");
         console.log("🖥 HTML Body:", parsed.html || "No HTML Content");
@@ -43,8 +51,8 @@ const server = new SMTPServer({
 
         // Send email data to webhook
         await axios.post("https://your-webhook-url.com/incoming-email", {
-          from: parsed.from ? parsed.from.text : "Unknown Sender",
-          to: parsed.to ? parsed.to.text : "Unknown Recipient",
+          from: parsed.from?.text || "Unknown Sender",
+          to: parsed.to?.text || "Unknown Recipient",
           subject: parsed.subject || "No Subject",
           text: parsed.text || "No Text Content",
           html: parsed.html || "No HTML Content",
@@ -58,7 +66,7 @@ const server = new SMTPServer({
         callback(null); // Accept the email
       } catch (err) {
         console.error("❌ Error parsing email:", err);
-        callback(new Error("Failed to process email"));
+        callback(new Error("Email parsing failed"));
       }
     });
   }
