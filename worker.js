@@ -12,17 +12,27 @@ const worker = new Worker("email-processing",
     try {
       const parsed = await simpleParser(job.data.rawEmail);
 
-      // Extract recipient email and account ID
+      // Extract TO email for correct account_id
       const toEmail = parsed.to?.value?.[0]?.address || "";
       const accountId = toEmail.split("@")[0] || "unknown";
 
-      // Extract sender email & name
+      // Extract FROM email and name
       let fromEmail = "Unknown Sender";
       let fromName = "";
 
       if (parsed.from?.value?.length > 0) {
         fromEmail = parsed.from.value[0].address || "Unknown Sender";
-        fromName = parsed.from.value[0].name || ""; // Extracts name if present
+        fromName = parsed.from.value[0].name || "";
+      }
+
+      // 🔥 Handle Gmail Forwarding: Extract the **real sender**
+      let originalSender = fromEmail; // Default to the 'From' field
+      let originalSenderName = fromName; 
+
+      const forwardedHeaderMatch = parsed.text.match(/From:\s*(.*?)\s*<(.+?)>/);
+      if (forwardedHeaderMatch) {
+        originalSenderName = forwardedHeaderMatch[1]?.trim() || "";
+        originalSender = forwardedHeaderMatch[2]?.trim() || fromEmail;
       }
 
       // Process attachments
@@ -38,9 +48,9 @@ const worker = new Worker("email-processing",
 
       // Send parsed email data to webhook
       await axios.post("https://ngrok.doerkit.dev/webhook_email", {
-        account_id: accountId,
-        from: fromEmail,
-        from_name: fromName, // Adds sender name if available
+        account_id: accountId, // ✅ Uses the correct recipient
+        from: originalSender, // ✅ Uses the **real sender**
+        from_name: originalSenderName, // ✅ Uses the **real sender name**
         to: parsed.to?.text || "Unknown Recipient",
         subject: parsed.subject || "No Subject",
         text: parsed.text || "No Text Content",
@@ -48,12 +58,12 @@ const worker = new Worker("email-processing",
         attachments: attachmentData,
       });
 
-      console.log(`✅ Processed email from ${fromEmail} (${fromName || "No Name"})`);
+      console.log(`✅ Processed email from ${originalSender} (${originalSenderName || "No Name"})`);
     } catch (err) {
       console.error("❌ Error processing email:", err);
     }
   },
-  { connection, concurrency: 5 } // Adjust concurrency as needed
+  { connection, concurrency: 5 }
 );
 
 console.log("📡 Email processing worker started...");
