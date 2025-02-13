@@ -52,8 +52,6 @@ const worker = new Worker(
           html: parsed.html || "No HTML Content",
           attachments: attachmentData,
         });
-
-        console.log(`✅ Email processed successfully for Account ID: ${accountId}`);
       });
     } catch (err) {
       console.error("❌ Error processing email:", err);
