@@ -14,8 +14,6 @@ const worker = new Worker(
 
       // ✅ Run SpamAssassin on the email
       exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
-        console.log("🚨 stdout");
-        console.log(stdout);
         if (stdout.includes("X-Spam-Flag: YES")) {
           console.error("🚨 SpamAssassin detected spam, rejecting email.");
           return;
