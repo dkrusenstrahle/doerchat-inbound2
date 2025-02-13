@@ -10,14 +10,25 @@ const worker = new Worker(
   "email-processing",
   async (job) => {
     try {
-      console.log("📩 Processing new email...");
+      console.log("================================================");
+      console.log("Processing new email");
+      console.log("================================================");
 
       exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
+
+        console.log("================================================");
+        console.log("Run the email through SpamAssassin");
+        console.log("================================================");
+
         if (stdout.includes("X-Spam-Flag: YES")) {
           console.warn("🚨 SpamAssassin detected spam, rejecting email.");
           await job.moveToCompleted("Spam email rejected", true);
           return;
         }
+
+        console.log("================================================");
+        console.log("Parse the email");
+        console.log("================================================");
 
         const parsed = await simpleParser(job.data.rawEmail);
 
@@ -41,6 +52,10 @@ const worker = new Worker(
           }));
         }
 
+        console.log("================================================");
+        console.log("Send the email to the webhook");
+        console.log("================================================");
+
         await axios.post("https://ngrok.doerkit.dev/webhook_email", {
           account_id: accountId,
           from: fromEmail,
@@ -48,13 +63,15 @@ const worker = new Worker(
           to: toEmail,
           to_name: toName,
           subject: parsed.subject || "No Subject",
-          text: parsed.text || "No Text Content",
-          html: parsed.html || "No HTML Content",
+          body_text: parsed.text || "No Text Content",
+          body_html: parsed.html || "No HTML Content",
           attachments: attachmentData,
         });
       });
     } catch (err) {
-      console.error("❌ Error processing email:", err);
+      console.log("================================================");
+      console.error("Error processing email:", err);
+      console.log("================================================");
     }
   },
   { connection, concurrency: 5 }

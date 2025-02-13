@@ -2,17 +2,21 @@ const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
 
-// 🔥 Redis connection for BullMQ and Rate Limiting
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
-// 🔒 Custom Rate Limiting Function (200 emails per 5 minutes per IP)
+////////////////////////////////////////////////////////////
+//
+// Custom Rate Limiting Function (200 emails per 5 minutes per IP)
+//
+////////////////////////////////////////////////////////////
+
 async function checkRateLimit(ip) {
   const key = `rate-limit:${ip}`;
   const count = await redisConnection.incr(key);
 
   if (count === 1) {
-    await redisConnection.expire(key, 300); // Reset counter after 10 minutes
+    await redisConnection.expire(key, 300); // Reset counter after 5 minutes
   }
 
   if (count > 200) {
@@ -21,13 +25,23 @@ async function checkRateLimit(ip) {
   return true; // Allow IP
 }
 
-// 🚀 SMTP Server Setup
+////////////////////////////////////////////////////////////
+//
+// SMTP Server Setup
+//
+////////////////////////////////////////////////////////////
+
 const server = new SMTPServer({
   logger: true,
   disableStartTLS: true,
   authOptional: true,
 
-  // 🔒 Apply Rate Limiting on Connection
+  ////////////////////////////////////////////////////////////
+  //
+  // Apply Rate Limiting on Connection
+  //
+  ////////////////////////////////////////////////////////////
+
   async onConnect(session, callback) {
     const ip = session.remoteAddress;
     const allowed = await checkRateLimit(ip);
@@ -38,6 +52,12 @@ const server = new SMTPServer({
     }
     callback();
   },
+
+  ////////////////////////////////////////////////////////////
+  //
+  // Process the email
+  //
+  ////////////////////////////////////////////////////////////
 
   onData(stream, session, callback) {
     let emailData = "";
@@ -61,6 +81,12 @@ const server = new SMTPServer({
     });
   }
 });
+
+////////////////////////////////////////////////////////////
+//
+// Start the SMTP Server
+//
+////////////////////////////////////////////////////////////
 
 server.listen(25, "0.0.0.0", () => {
   console.log("📡 SMTP Server with rate limiting listening on port 25...");
