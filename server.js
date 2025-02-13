@@ -1,5 +1,4 @@
 const { SMTPServer } = require("smtp-server");
-const { simpleParser } = require("mailparser");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
 

@@ -1,5 +1,6 @@
 const { Worker } = require("bullmq");
 const { simpleParser } = require("mailparser");
+
 const axios = require("axios");
 const Redis = require("ioredis");
 
@@ -7,8 +8,7 @@ const connection = new Redis({
   maxRetriesPerRequest: null,
 });
 
-const worker = new Worker(
-  "email-processing",
+const worker = new Worker("email-processing",
   async (job) => {
     try {
       const parsed = await simpleParser(job.data.rawEmail);
@@ -34,13 +34,9 @@ const worker = new Worker(
         html: parsed.html || "No HTML Content",
         attachments: attachmentData,
       });
-
-      console.log(`✅ Processed job ${job.id} for account: ${accountId}`);
     } catch (err) {
       console.error("❌ Error processing email:", err);
     }
   },
   { connection, concurrency: 5 } // Change this number to control parallel jobs
 );
-
-console.log("📡 Worker started, processing jobs concurrently...");
