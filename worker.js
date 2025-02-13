@@ -15,7 +15,8 @@ const worker = new Worker(
       // ✅ Run SpamAssassin on the email
       exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
         if (stdout.includes("X-Spam-Flag: YES")) {
-          console.error("🚨 SpamAssassin detected spam, rejecting email.");
+          console.warn("🚨 SpamAssassin detected spam, rejecting email.");
+          await job.moveToCompleted("Spam email rejected", true); // ✅ Marks job as completed in queue
           return;
         }
 
