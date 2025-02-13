@@ -22,7 +22,6 @@ const worker = new Worker(
       console.log("================================================");
 
       exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
-
         console.log("================================================");
         console.log("Run the email through SpamAssassin");
         console.log("================================================");
@@ -49,6 +48,9 @@ const worker = new Worker(
         let toEmail = parsed.to?.value?.[0]?.address || "Unknown Recipient";
         let toName = parsed.to?.value?.[0]?.name || "";
 
+        let messageId = parsed.messageId || null;
+        let inReplyTo = parsed.inReplyTo || null;
+
         let attachmentData = [];
         if (parsed.attachments && parsed.attachments.length > 0) {
           attachmentData = parsed.attachments.map((attachment) => ({
@@ -63,7 +65,7 @@ const worker = new Worker(
         console.log("Send the email to the webhook");
         console.log("================================================");
 
-        await axios.post("https://ngrok.doerkit.dev/webhook_email", {
+        await axios.post("https://ngrok.doerkit.dev/webhook_inbound", {
           account_id: accountId,
           from: fromEmail,
           from_name: fromName,
@@ -72,6 +74,8 @@ const worker = new Worker(
           subject: parsed.subject || "No Subject",
           body_text: parsed.text || "No Text Content",
           body_html: parsed.html || "No HTML Content",
+          message_id: messageId,
+          in_reply_to: inReplyTo,
           attachments: attachmentData,
         });
       });
