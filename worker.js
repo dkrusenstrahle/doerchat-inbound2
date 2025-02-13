@@ -3,7 +3,9 @@ const { simpleParser } = require("mailparser");
 const axios = require("axios");
 const Redis = require("ioredis");
 
-const connection = new Redis();
+const connection = new Redis({
+  maxRetriesPerRequest: null,
+});
 
 const worker = new Worker(
   "email-processing",
