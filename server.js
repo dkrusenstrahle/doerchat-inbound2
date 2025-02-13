@@ -2,7 +2,8 @@ const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
 const rateLimit = require("express-rate-limit");
-const RedisStore = require("rate-limit-redis");
+const { RedisStore } = require("rate-limit-redis");
+
 
 // 🔥 Redis connection for BullMQ and Rate Limiting
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
@@ -14,7 +15,7 @@ const limiter = rateLimit({
     sendCommand: (...args) => redisConnection.call(...args),
   }),
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 50, // Allow 50 emails per IP per 10 min
+  max: 50, // Limit each IP to 50 requests per window
   message: "Too many emails sent, please slow down.",
   standardHeaders: true,
   legacyHeaders: false,
