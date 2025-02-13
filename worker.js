@@ -7,33 +7,22 @@ const connection = new Redis({
   maxRetriesPerRequest: null,
 });
 
-const worker = new Worker("email-processing",
+const worker = new Worker(
+  "email-processing",
   async (job) => {
     try {
       const parsed = await simpleParser(job.data.rawEmail);
 
-      // ✅ Extract the correct `account_id` from `RCPT TO`
+      // ✅ Extract correct account_id from `RCPT TO`
       let accountId = "unknown";
       if (parsed.to?.value?.length > 0) {
         const toEmail = parsed.to.value[0].address || "";
         accountId = toEmail.split("@")[0] || "unknown";
       }
 
-      // ✅ Extract the original sender's email and name from the forwarded content
-      let fromEmail = "Unknown Sender";
-      let fromName = "";
-
-      if (parsed.from?.value?.length > 0) {
-        fromEmail = parsed.from.value[0].address || "Unknown Sender";
-        fromName = parsed.from.value[0].name || "";
-      }
-
-      // 🔥 Handle Gmail Forwarding: Extract **real sender** from email body
-      const forwardedMatch = parsed.text?.match(/From:\s*(.*?)\s*<(.+?)>/);
-      if (forwardedMatch) {
-        fromName = forwardedMatch[1]?.trim() || "";
-        fromEmail = forwardedMatch[2]?.trim() || fromEmail; // Keep Gmail `from` as fallback
-      }
+      // ✅ Extract sender email and name (default from the email headers)
+      let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
+      let fromName = parsed.from?.value?.[0]?.name || "";
 
       // ✅ Process attachments
       let attachmentData = [];
@@ -48,9 +37,9 @@ const worker = new Worker("email-processing",
 
       // ✅ Send parsed email data to webhook
       await axios.post("https://ngrok.doerkit.dev/webhook_email", {
-        accountId: accountId, // ✅ Now using the correct recipient!
-        from: fromEmail, // ✅ Extracted real sender
-        from_name: fromName, // ✅ Extracted real sender name
+        account_id: accountId, // ✅ Extracted from `RCPT TO`
+        from: fromEmail, // ✅ Sender email
+        from_name: fromName, // ✅ Sender name
         to: parsed.to?.text || "Unknown Recipient",
         subject: parsed.subject || "No Subject",
         text: parsed.text || "No Text Content",
@@ -58,7 +47,7 @@ const worker = new Worker("email-processing",
         attachments: attachmentData,
       });
 
-      console.log(`✅ Processed email from ${fromEmail} (${fromName || "No Name"}), Account ID: ${accountId}`);
+      console.log(`✅ Processed email for Account ID: ${accountId}`);
     } catch (err) {
       console.error("❌ Error processing email:", err);
     }
