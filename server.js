@@ -1,25 +1,25 @@
 const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
-const rateLimit = require("express-rate-limit");
-const { RedisStore } = require("rate-limit-redis");
-
 
 // 🔥 Redis connection for BullMQ and Rate Limiting
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
-// 🔒 Rate Limiting (50 emails per 10 minutes per IP)
-const limiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args) => redisConnection.call(...args),
-  }),
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 50, // Limit each IP to 50 requests per window
-  message: "Too many emails sent, please slow down.",
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// 🔒 Custom Rate Limiting Function (50 emails per 10 minutes per IP)
+async function checkRateLimit(ip) {
+  const key = `rate-limit:${ip}`;
+  const count = await redisConnection.incr(key);
+
+  if (count === 1) {
+    await redisConnection.expire(key, 600); // Reset counter after 10 minutes
+  }
+
+  if (count > 50) {
+    return false; // Block IP
+  }
+  return true; // Allow IP
+}
 
 // 🚀 SMTP Server Setup
 const server = new SMTPServer({
@@ -28,16 +28,15 @@ const server = new SMTPServer({
   authOptional: true,
 
   // 🔒 Apply Rate Limiting on Connection
-  onConnect(session, callback) {
+  async onConnect(session, callback) {
     const ip = session.remoteAddress;
+    const allowed = await checkRateLimit(ip);
 
-    limiter({ ip }, {}, (err) => {
-      if (err) {
-        console.warn(`🚨 Rate limit exceeded for ${ip}`);
-        return callback(new Error("Too many connections, please try again later."));
-      }
-      callback();
-    });
+    if (!allowed) {
+      console.warn(`🚨 Rate limit exceeded for ${ip}`);
+      return callback(new Error("Too many connections, please try again later."));
+    }
+    callback();
   },
 
   onData(stream, session, callback) {
