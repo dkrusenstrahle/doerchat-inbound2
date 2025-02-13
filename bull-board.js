@@ -1,6 +1,6 @@
 const express = require("express");
 const { createBullBoard } = require("@bull-board/api");
-const { BullAdapter } = require("@bull-board/api/bullAdapter");
+const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
@@ -10,7 +10,7 @@ const emailQueue = new Queue("email-processing", { connection });
 
 const serverAdapter = new ExpressAdapter();
 createBullBoard({
-  queues: [new BullAdapter(emailQueue)],
+  queues: [new BullMQAdapter(emailQueue)],
   serverAdapter,
 });
 
