@@ -75,6 +75,29 @@ else
     echo "================================================"
 fi
 
+# Install SpamAssassin only if not installed
+if ! command -v spamassassin &> /dev/null; then
+    echo "================================================"
+    echo "🛡 Installing SpamAssassin..."
+    echo "================================================"
+    sudo apt install -y spamassassin
+    sudo systemctl enable --now spamassassin
+else
+    echo "================================================"
+    echo "✅ SpamAssassin is already installed."
+    echo "================================================"
+fi
+
+# Configure SpamAssassin Sensitivity (Optional)
+SPAM_CONF="/etc/spamassassin/local.cf"
+if ! grep -q "required_score" "$SPAM_CONF"; then
+    echo "================================================"
+    echo "⚙️ Setting SpamAssassin sensitivity..."
+    echo "================================================"
+    echo "required_score 7.0" | sudo tee -a "$SPAM_CONF"
+    sudo systemctl restart spamassassin
+fi
+
 # Install BullMQ for Background Jobs
 echo "================================================"
 echo "📥 Installing BullMQ..."
@@ -104,6 +127,11 @@ echo "⚙️ Setting up background job worker..."
 echo "================================================"
 pm2 start worker.js --name email-worker -i max || pm2 restart email-worker
 
+echo "================================================"
+echo "📊 Starting Bull Board Dashboard..."
+echo "================================================"
+pm2 start bull-board.js --name queue-dashboard || pm2 restart queue-dashboard
+
 # Ensure PM2 starts on reboot
 echo "================================================"
 echo "🔄 Ensuring PM2 auto-restart..."
@@ -121,3 +149,5 @@ pm2 list
 echo "🔎 Run 'pm2 list' to check running services."
 echo "🔎 Run 'pm2 logs smtp-server --lines 50' to see server logs."
 echo "🔎 Run 'pm2 logs email-worker --lines 50' to see worker logs."
+echo "🔎 Run 'pm2 logs queue-dashboard --lines 50' to see Bull Board logs."
+echo "🔗 Open Bull Board at: http://YOUR-SERVER-IP:3001/admin/queues"
