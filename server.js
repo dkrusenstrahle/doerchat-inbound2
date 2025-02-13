@@ -6,16 +6,16 @@ const Redis = require("ioredis");
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
-// 🔒 Custom Rate Limiting Function (50 emails per 10 minutes per IP)
+// 🔒 Custom Rate Limiting Function (200 emails per 5 minutes per IP)
 async function checkRateLimit(ip) {
   const key = `rate-limit:${ip}`;
   const count = await redisConnection.incr(key);
 
   if (count === 1) {
-    await redisConnection.expire(key, 600); // Reset counter after 10 minutes
+    await redisConnection.expire(key, 300); // Reset counter after 10 minutes
   }
 
-  if (count > 50) {
+  if (count > 200) {
     return false; // Block IP
   }
   return true; // Allow IP
