@@ -48,7 +48,7 @@ const worker = new Worker("email-processing",
 
       // ✅ Send parsed email data to webhook
       await axios.post("https://ngrok.doerkit.dev/webhook_email", {
-        account_id: accountId, // ✅ Now using the correct recipient!
+        accountId: accountId, // ✅ Now using the correct recipient!
         from: fromEmail, // ✅ Extracted real sender
         from_name: fromName, // ✅ Extracted real sender name
         to: parsed.to?.text || "Unknown Recipient",
