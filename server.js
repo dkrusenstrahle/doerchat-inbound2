@@ -7,23 +7,23 @@ const emailQueue = new Queue("email-processing", { connection: redisConnection }
 
 ////////////////////////////////////////////////////////////
 //
-// Custom Rate Limiting Function (200 emails per 5 minutes per IP)
+// Custom Rate Limiting Function (DISABLED FOR NOW)
 //
 ////////////////////////////////////////////////////////////
 
-async function checkRateLimit(ip) {
-  const key = `rate-limit:${ip}`;
-  const count = await redisConnection.incr(key);
+// async function checkRateLimit(ip) {
+//   const key = `rate-limit:${ip}`;
+//   const count = await redisConnection.incr(key);
 
-  if (count === 1) {
-    await redisConnection.expire(key, 300); // Reset counter after 5 minutes
-  }
+//   if (count === 1) {
+//     await redisConnection.expire(key, 300); // Reset counter after 5 minutes
+//   }
 
-  if (count > 2000) {
-    return false; // Block IP
-  }
-  return true; // Allow IP
-}
+//   if (count > 2000) {
+//     return false; // Block IP
+//   }
+//   return true; // Allow IP
+// }
 
 ////////////////////////////////////////////////////////////
 //
@@ -38,18 +38,21 @@ const server = new SMTPServer({
 
   ////////////////////////////////////////////////////////////
   //
-  // Apply Rate Limiting on Connection
+  // Log when an SMTP connection starts
   //
   ////////////////////////////////////////////////////////////
 
   async onConnect(session, callback) {
     const ip = session.remoteAddress;
-    const allowed = await checkRateLimit(ip);
+    console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
 
-    if (!allowed) {
-      console.warn(`🚨 Rate limit exceeded for ${ip}`);
-      return callback(new Error("Too many connections, please try again later."));
-    }
+    // 🔥 Rate limiting disabled for now
+    // const allowed = await checkRateLimit(ip);
+    // if (!allowed) {
+    //   console.warn(`🚨 Rate limit exceeded for ${ip}`);
+    //   return callback(new Error("Too many connections, please try again later."));
+    // }
+
     callback();
   },
 
@@ -63,19 +66,22 @@ const server = new SMTPServer({
     let emailData = "";
     const rcptToEmails = session.envelope.rcptTo.map((recipient) => recipient.address);
 
+    console.log(`📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(", ")}`);
+
     stream.on("data", (chunk) => {
       emailData += chunk.toString();
     });
 
     stream.on("end", async () => {
       try {
+        console.log(`✅ [${new Date().toISOString()}] Email added to queue`);
         await emailQueue.add("processEmail", {
           rawEmail: emailData,
           envelopeTo: rcptToEmails,
         });
         callback(null);
       } catch (err) {
-        console.error("❌ Error queuing email:", err);
+        console.error(`❌ [${new Date().toISOString()}] Error queuing email:`, err);
         callback(new Error("Email queueing failed"));
       }
     });
@@ -89,5 +95,5 @@ const server = new SMTPServer({
 ////////////////////////////////////////////////////////////
 
 server.listen(25, "0.0.0.0", () => {
-  console.log("📡 SMTP Server with rate limiting listening on port 25...");
+  console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port 25...`);
 });
