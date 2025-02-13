@@ -65,24 +65,34 @@ const worker = new Worker(
         console.log("Send the email to the webhook");
         console.log("================================================");
 
-        await axios.post("https://ngrok.doerkit.dev/webhook_inbound", {
-          account_id: accountId,
-          from: fromEmail,
-          from_name: fromName,
-          to: toEmail,
-          to_name: toName,
-          subject: parsed.subject || "No Subject",
-          body_text: parsed.text || "No Text Content",
-          body_html: parsed.html || "No HTML Content",
-          message_id: messageId,
-          in_reply_to: inReplyTo,
-          attachments: attachmentData,
-        });
+        try {
+          const response = await axios.post("https://ngrok.doerkit.dev/webhook_inbound", {
+            account_id: accountId,
+            from: fromEmail,
+            from_name: fromName,
+            to: toEmail,
+            to_name: toName,
+            subject: parsed.subject || "No Subject",
+            body_text: parsed.text || "No Text Content",
+            body_html: parsed.html || "No HTML Content",
+            message_id: messageId,
+            in_reply_to: inReplyTo,
+            attachments: attachmentData,
+          });
+
+          console.log(`✅ Webhook sent successfully: ${response.status} ${response.statusText}`);
+        } catch (axiosError) {
+          console.error(`❌ Failed to send webhook: ${axiosError.message}`);
+          console.error(`🔗 Webhook URL: https://ngrok.doerkit.dev/webhook_inbound`);
+          console.error(`📩 Payload: ${JSON.stringify({ account_id: accountId, subject: parsed.subject })}`);
+          await job.moveToFailed({ message: "Webhook failed" });
+        }
       });
     } catch (err) {
       console.log("================================================");
-      console.error("Error processing email:", err);
+      console.error("❌ Error processing email:", err);
       console.log("================================================");
+      await job.moveToFailed({ message: err.message });
     }
   },
   { connection, concurrency: 5 }
@@ -95,15 +105,11 @@ const worker = new Worker(
 ////////////////////////////////////////////////////////////
 
 worker.on("completed", (job) => {
-  console.log(`Job ${job.id} completed successfully.`);
-});
-
-worker.on("failed", (job, err) => {
-  console.error(`Job ${job.id} failed: ${err.message}`);
+  console.log(`✅ Job ${job.id} completed successfully.`);
 });
 
 worker.on("failed", async (job, err) => {
-  console.error(`Job ${job.id} failed: ${err.message}`);
+  console.error(`❌ Job ${job.id} failed: ${err.message}`);
 
   if (job.attemptsMade < 3) {
     console.log(`🔄 Retrying job ${job.id} in 10 seconds...`);
