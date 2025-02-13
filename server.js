@@ -19,7 +19,7 @@ async function checkRateLimit(ip) {
     await redisConnection.expire(key, 300); // Reset counter after 5 minutes
   }
 
-  if (count > 200) {
+  if (count > 2000) {
     return false; // Block IP
   }
   return true; // Allow IP
