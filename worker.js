@@ -1,47 +1,59 @@
 const { Worker } = require("bullmq");
 const { simpleParser } = require("mailparser");
-
 const axios = require("axios");
 const Redis = require("ioredis");
+const { exec } = require("child_process");
 
 const connection = new Redis({ maxRetriesPerRequest: null });
 
-const worker = new Worker("email-processing",
+const worker = new Worker(
+  "email-processing",
   async (job) => {
     try {
-      const parsed = await simpleParser(job.data.rawEmail);
+      console.log("📩 Processing new email...");
 
-      let accountId = job.data.envelopeTo?.[0]?.split("@")[0] || "unknown";
-      if (accountId === "unknown" && parsed.to?.value?.[0]?.address) {
-        accountId = parsed.to.value[0].address.split("@")[0];
-      }
+      // Run SpamAssassin in a separate process
+      exec("echo " + JSON.stringify(job.data.rawEmail) + " | spamassassin -e", async (err, stdout, stderr) => {
+        if (err) {
+          console.error("🚨 SpamAssassin detected spam, rejecting email.");
+          return;
+        }
 
-      let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
-      let fromName = parsed.from?.value?.[0]?.name || "";
+        const parsed = await simpleParser(job.data.rawEmail);
 
-      let toEmail = parsed.to?.value?.[0]?.address || "Unknown Recipient";
-      let toName = parsed.to?.value?.[0]?.name || "";
+        let accountId = job.data.envelopeTo?.[0]?.split("@")[0] || "unknown";
+        if (accountId === "unknown" && parsed.to?.value?.[0]?.address) {
+          accountId = parsed.to.value[0].address.split("@")[0];
+        }
 
-      let attachmentData = [];
-      if (parsed.attachments && parsed.attachments.length > 0) {
-        attachmentData = parsed.attachments.map((attachment) => ({
-          filename: attachment.filename,
-          size: attachment.size,
-          mimeType: attachment.contentType,
-          content: attachment.content.toString("base64"),
-        }));
-      }
+        let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
+        let fromName = parsed.from?.value?.[0]?.name || "";
+        let toEmail = parsed.to?.value?.[0]?.address || "Unknown Recipient";
+        let toName = parsed.to?.value?.[0]?.name || "";
 
-      await axios.post("https://ngrok.doerkit.dev/webhook_email", {
-        account_id: accountId,
-        from: fromEmail,
-        from_name: fromName,
-        to: toEmail,
-        to_name: toName,
-        subject: parsed.subject || "No Subject",
-        body_text: parsed.text || "No Text Content",
-        body_html: parsed.html || "No HTML Content",
-        attachments: attachmentData,
+        let attachmentData = [];
+        if (parsed.attachments && parsed.attachments.length > 0) {
+          attachmentData = parsed.attachments.map((attachment) => ({
+            filename: attachment.filename,
+            size: attachment.size,
+            mimeType: attachment.contentType,
+            content: attachment.content.toString("base64"),
+          }));
+        }
+
+        await axios.post("https://ngrok.doerkit.dev/webhook_email", {
+          account_id: accountId,
+          from: fromEmail,
+          from_name: fromName,
+          to: toEmail,
+          to_name: toName,
+          subject: parsed.subject || "No Subject",
+          text: parsed.text || "No Text Content",
+          html: parsed.html || "No HTML Content",
+          attachments: attachmentData,
+        });
+
+        console.log(`✅ Email processed successfully for Account ID: ${accountId}`);
       });
     } catch (err) {
       console.error("❌ Error processing email:", err);
@@ -49,3 +61,5 @@ const worker = new Worker("email-processing",
   },
   { connection, concurrency: 5 }
 );
+
+console.log("📡 Email processing worker with SpamAssassin started...");
