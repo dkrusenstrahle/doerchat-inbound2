@@ -12,6 +12,7 @@
     "axios": "^1.7.9",
     "bullmq": "^5.40.4",
     "express": "^4.21.2",
+    "express-basic-auth": "^1.2.1",
     "ioredis": "^5.5.0",
     "mailparser": "^3.7.2",
     "smtp-server": "^3.13.6"
