@@ -3,9 +3,7 @@ const { simpleParser } = require("mailparser");
 const axios = require("axios");
 const Redis = require("ioredis");
 
-const connection = new Redis({
-  maxRetriesPerRequest: null,
-});
+const connection = new Redis({ maxRetriesPerRequest: null });
 
 const worker = new Worker(
   "email-processing",
@@ -13,18 +11,12 @@ const worker = new Worker(
     try {
       const parsed = await simpleParser(job.data.rawEmail);
 
-      // ✅ Extract correct account_id from `RCPT TO`
-      let accountId = "unknown";
-      if (parsed.to?.value?.length > 0) {
-        const toEmail = parsed.to.value[0].address || "";
-        accountId = toEmail.split("@")[0] || "unknown";
-      }
+      // ✅ Use RCPT TO as account_id
+      const accountId = job.data.envelopeTo?.[0]?.split("@")[0] || "unknown";
 
-      // ✅ Extract sender email and name (default from the email headers)
       let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
       let fromName = parsed.from?.value?.[0]?.name || "";
 
-      // ✅ Process attachments
       let attachmentData = [];
       if (parsed.attachments && parsed.attachments.length > 0) {
         attachmentData = parsed.attachments.map((attachment) => ({
@@ -35,11 +27,10 @@ const worker = new Worker(
         }));
       }
 
-      // ✅ Send parsed email data to webhook
       await axios.post("https://ngrok.doerkit.dev/webhook_email", {
         account_id: accountId, // ✅ Extracted from `RCPT TO`
-        from: fromEmail, // ✅ Sender email
-        from_name: fromName, // ✅ Sender name
+        from: fromEmail,
+        from_name: fromName,
         to: parsed.to?.text || "Unknown Recipient",
         subject: parsed.subject || "No Subject",
         text: parsed.text || "No Text Content",
