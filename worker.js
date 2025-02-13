@@ -1,8 +1,9 @@
 const { Worker } = require("bullmq");
 const { simpleParser } = require("mailparser");
+const { exec } = require("child_process");
+
 const axios = require("axios");
 const Redis = require("ioredis");
-const { exec } = require("child_process");
 
 const connection = new Redis({ maxRetriesPerRequest: null });
 
