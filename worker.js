@@ -12,9 +12,9 @@ const worker = new Worker(
     try {
       console.log("📩 Processing new email...");
 
-      // Run SpamAssassin in a separate process
-      exec("echo " + JSON.stringify(job.data.rawEmail) + " | spamassassin -e", async (err, stdout, stderr) => {
-        if (err) {
+      // ✅ Run SpamAssassin on the email
+      exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
+        if (stdout.includes("X-Spam-Flag: YES")) {
           console.error("🚨 SpamAssassin detected spam, rejecting email.");
           return;
         }
