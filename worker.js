@@ -6,6 +6,12 @@ const { exec } = require("child_process");
 
 const connection = new Redis({ maxRetriesPerRequest: null });
 
+////////////////////////////////////////////////////////////
+//
+// Create the worker
+//
+////////////////////////////////////////////////////////////
+
 const worker = new Worker(
   "email-processing",
   async (job) => {
@@ -76,3 +82,30 @@ const worker = new Worker(
   },
   { connection, concurrency: 5 }
 );
+
+////////////////////////////////////////////////////////////
+//
+// Log when a job is completed
+//
+////////////////////////////////////////////////////////////
+
+worker.on("completed", (job) => {
+  console.log(`Job ${job.id} completed successfully.`);
+});
+
+worker.on("failed", (job, err) => {
+  console.error(`Job ${job.id} failed: ${err.message}`);
+});
+
+worker.on("failed", async (job, err) => {
+  console.error(`Job ${job.id} failed: ${err.message}`);
+
+  if (job.attemptsMade < 3) {
+    console.log(`🔄 Retrying job ${job.id} in 10 seconds...`);
+
+    await job.queue.add(job.name, job.data, {
+      delay: 10000, // Retry after 10 seconds
+      attempts: 3, // Max retry attempts
+    });
+  }
+});
