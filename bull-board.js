@@ -16,13 +16,12 @@ createBullBoard({
   serverAdapter,
 });
 
-// 🔒 Add Basic Authentication Middleware
 const app = express();
 app.use(
   "/admin/queues",
   basicAuth({
-    users: { "admin": "paulina1" }, // Change username & password
-    challenge: true, // Shows browser pop-up for credentials
+    users: { "admin": "paulina1" },
+    challenge: true,
     unauthorizedResponse: "Unauthorized",
   }),
   serverAdapter.getRouter()

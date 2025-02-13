@@ -12,11 +12,10 @@ const worker = new Worker(
     try {
       console.log("📩 Processing new email...");
 
-      // ✅ Run SpamAssassin on the email
       exec(`echo ${JSON.stringify(job.data.rawEmail)} | spamassassin -e`, async (err, stdout, stderr) => {
         if (stdout.includes("X-Spam-Flag: YES")) {
           console.warn("🚨 SpamAssassin detected spam, rejecting email.");
-          await job.moveToCompleted("Spam email rejected", true); // ✅ Marks job as completed in queue
+          await job.moveToCompleted("Spam email rejected", true);
           return;
         }
 
@@ -62,5 +61,3 @@ const worker = new Worker(
   },
   { connection, concurrency: 5 }
 );
-
-console.log("📡 Email processing worker with SpamAssassin started...");
