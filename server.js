@@ -156,5 +156,5 @@ const server = new SMTPServer({
 
 //Use the variables in the script or hardcode them
 server.listen(25, "0.0.0.0", () => {
-    console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${25}...`);
+  console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${25}...`);
 });
