@@ -8,6 +8,7 @@ const emailQueue = new Queue("email-processing", { connection: redisConnection }
 
 // Configuration (from environment variables)
 const ACCEPTED_DOMAIN = process.env.ACCEPTED_DOMAIN || "doerchatmail.com"; // e.g., "doerchatmail.com"
+const ALLOWED_MAIL_FROM_DOMAIN = process.env.ALLOWED_MAIL_FROM_DOMAIN || "doerchat.com"; // e.g., "doerchat.com"
 
 ////////////////////////////////////////////////////////////
 //
@@ -84,6 +85,7 @@ const server = new SMTPServer({
             return callback(new Error("Too many connections, please try again later."));
         }
 
+        session.validHelo = false;
         callback();
     },
 
@@ -106,12 +108,29 @@ const server = new SMTPServer({
         }
 
         // **Validate HELO here**
-        if (!isValidHelo(session.helo)) {
-            console.warn(`🚨 Invalid HELO/EHLO received from ${session.remoteAddress}`);
-            return callback(new Error("Invalid HELO/EHLO"));
+        if (!session.validHelo) {
+            if (!isValidHelo(session.helo)) {
+                console.warn(`🚨 Invalid HELO/EHLO received from ${session.remoteAddress}`);
+                return callback(new Error("Invalid HELO/EHLO"));
+            }
+            session.validHelo = true;
         }
 
         console.log(`✅ Accepted recipient: ${recipient}`);
+        callback();
+    },
+    ////////////////////////////////////////////////////////////
+    //
+    // Validate MAIL FROM Domain
+    //
+    ////////////////////////////////////////////////////////////
+    onMailFrom(address, session, callback) {
+        const mailFrom = address.address;
+        if (!mailFrom.endsWith(`@${ALLOWED_MAIL_FROM_DOMAIN}`)) {
+            console.warn(`❌ Rejected MAIL FROM: ${mailFrom}`);
+            return callback(new Error("Invalid MAIL FROM domain"));
+        }
+        console.log(`✅ Accepted MAIL FROM: ${mailFrom}`);
         callback();
     },
 
