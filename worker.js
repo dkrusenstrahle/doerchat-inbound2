@@ -3,7 +3,6 @@ const { simpleParser } = require("mailparser");
 const { exec } = require("child_process");
 const axios = require("axios");
 const Redis = require("ioredis");
-require("dotenv").config();
 
 ////////////////////////////////////////////////////////////
 //
@@ -22,6 +21,24 @@ const connection = new Redis({
 
 ////////////////////////////////////////////////////////////
 //
+// Utility: Run SpamAssassin Safely
+//
+////////////////////////////////////////////////////////////
+
+const runSpamAssassin = (email) => {
+  return new Promise((resolve, reject) => {
+    exec(`echo ${JSON.stringify(email)} | spamassassin -e`, (err, stdout) => {
+      if (err) {
+        console.error("SpamAssassin Error:", err);
+        return reject(err);
+      }
+      resolve(stdout);
+    });
+  });
+};
+
+////////////////////////////////////////////////////////////
+//
 // Job Processor
 //
 ////////////////////////////////////////////////////////////
@@ -34,6 +51,21 @@ const worker = new Worker(
     console.log("================================================");
 
     try {
+      console.log("🚀 Running SpamAssassin...");
+      const spamCheckResult = await runSpamAssassin(job.data.rawEmail);
+
+      // Extract the SpamAssassin score
+      const scoreMatch = spamCheckResult.match(/X-Spam-Score:\s*([0-9.]+)/);
+      const spamScore = scoreMatch ? parseFloat(scoreMatch[1]) : 0; // Default to 0 if no score
+
+      const spamThreshold = parseFloat("5.0"); // Get threshold from env
+      console.log(`SpamAssassin Score: ${spamScore}, Threshold: ${spamThreshold}`);
+
+      if (spamCheckResult.includes("X-Spam-Flag: YES") || spamScore > spamThreshold) {
+        console.warn("🚨 SpamAssassin detected spam, rejecting email.");
+        throw new Error(`Spam email detected (SpamAssassin Score: ${spamScore})`);
+      }
+
       console.log("📩 Parsing the email...");
       const parsed = await simpleParser(job.data.rawEmail);
 
@@ -91,7 +123,7 @@ const worker = new Worker(
 //
 //  Job Event Handlers for Debugging
 //
-////////////////////////////////////////////////////////////
+////////////////////////////////////////////
 
 worker.on("completed", (job) => {
   console.log(`✅ Job ${job.id} completed successfully.`);
