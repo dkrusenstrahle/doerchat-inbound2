@@ -5,11 +5,10 @@ const Redis = require("ioredis");
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
-// Configuration
 const ACCEPTED_DOMAIN = "doerchatmail.com";
 
-const EMAIL_RATE_LIMIT_WINDOW = 300; // seconds
-const EMAIL_RATE_LIMIT_MAX = 100; // emails
+const EMAIL_RATE_LIMIT_WINDOW = 300;
+const EMAIL_RATE_LIMIT_MAX = 100;
 
 ////////////////////////////////////////////////////////////
 //
@@ -18,31 +17,31 @@ const EMAIL_RATE_LIMIT_MAX = 100; // emails
 ////////////////////////////////////////////////////////////
 
 async function checkIPRateLimit(ip) {
-    const key = `ip-rate-limit:${ip}`;
-    const count = await redisConnection.incr(key);
+  const key = `ip-rate-limit:${ip}`;
+  const count = await redisConnection.incr(key);
 
-    if (count === 1) {
-        await redisConnection.expire(key, EMAIL_RATE_LIMIT_WINDOW);
-    }
+  if (count === 1) {
+    await redisConnection.expire(key, EMAIL_RATE_LIMIT_WINDOW);
+  }
 
-    if (count > (EMAIL_RATE_LIMIT_MAX)) {
-        return false; // Block IP
-    }
-    return true; // Allow IP
+  if (count > (EMAIL_RATE_LIMIT_MAX)) {
+    return false;
+  }
+  return true;
 }
 
 async function checkEmailRateLimit(email) {
-    const key = `email-rate-limit:${email}`;
-    const count = await redisConnection.incr(key);
+  const key = `email-rate-limit:${email}`;
+  const count = await redisConnection.incr(key);
 
-    if (count === 1) {
-        await redisConnection.expire(key, EMAIL_RATE_LIMIT_WINDOW);
-    }
+  if (count === 1) {
+    await redisConnection.expire(key, EMAIL_RATE_LIMIT_WINDOW);
+  }
 
-    if (count > EMAIL_RATE_LIMIT_MAX) {
-        return false; // Block email
-    }
-    return true; // Allow email
+  if (count > EMAIL_RATE_LIMIT_MAX) {
+    return false;
+  }
+  return true;
 }
 
 ////////////////////////////////////////////////////////////
@@ -52,98 +51,101 @@ async function checkEmailRateLimit(email) {
 ////////////////////////////////////////////////////////////
 
 const server = new SMTPServer({
-    logger: true,
-    disabledCommands: ['STARTTLS'],
-    authOptional: true, // set to false to disallow non-auth
+  logger: true,
+  disabledCommands: ['STARTTLS'],
+  authOptional: true,
 
-    ////////////////////////////////////////////////////////////
-    //
-    // Connection Handling
-    //
-    ////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  //
+  // Connection Handling
+  //
+  ////////////////////////////////////////////////////////////
 
-    async onConnect(session, callback) {
-        const ip = session.remoteAddress; // or try session.client.remoteAddress
-        console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
+  async onConnect(session, callback) {
+    const ip = session.remoteAddress; // or try session.client.remoteAddress
+    console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
 
-        const allowed = await checkIPRateLimit(ip); // Apply IP-based rate limiting
-        if (!allowed) {
-            console.warn(`🚨 IP Rate limit exceeded for ${ip}`);
-            return callback(new Error("Too many connections from this IP, please try again later."));
-        }
+    const allowed = await checkIPRateLimit(ip); // Apply IP-based rate limiting
+    if (!allowed) {
+      console.warn(`🚨 IP Rate limit exceeded for ${ip}`);
+      return callback(new Error("Too many connections from this IP, please try again later."));
+    }
 
-        callback();
-    },
+    callback();
+  },
 
-    ////////////////////////////////////////////////////////////
-    //
-    // Recipient Verification
-    //
-    ////////////////////////////////////////////////////////////
-    onRcptTo(address, session, callback) {
-        const recipient = address.address;
+  ////////////////////////////////////////////////////////////
+  //
+  // Recipient Verification
+  //
+  ////////////////////////////////////////////////////////////
 
-        // Check if the recipient address matches the expected pattern
-        const isValidRecipient =
-            recipient.endsWith(`@${ACCEPTED_DOMAIN}`) &&
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/.test(recipient); // Basic UUID check
+  onRcptTo(address, session, callback) {
+    const recipient = address.address;
 
-        if (!isValidRecipient) {
-            console.warn(`❌ Rejected recipient: ${recipient}`);
-            return callback(new Error("Recipient address not allowed"));
-        }
+    // Check if the recipient address matches the expected pattern
+    const isValidRecipient =
+      recipient.endsWith(`@${ACCEPTED_DOMAIN}`) &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/.test(recipient); // Basic UUID check
 
-        console.log(`✅ Accepted recipient: ${recipient}`);
-        callback();
-    },
-    ////////////////////////////////////////////////////////////
-    //
-    // MAIL FROM Verification and Rate Limiting
-    //
-    ////////////////////////////////////////////////////////////
+    if (!isValidRecipient) {
+      console.warn(`❌ Rejected recipient: ${recipient}`);
+      return callback(new Error("Recipient address not allowed"));
+    }
 
-    async onMailFrom(address, session, callback) {
-        const mailFrom = address.address;
+    console.log(`✅ Accepted recipient: ${recipient}`);
+    callback();
+  },
 
-        const allowed = await checkEmailRateLimit(mailFrom); // Apply email-based rate limiting
-        if (!allowed) {
-            console.warn(`🚨 Email Rate limit exceeded for: ${mailFrom}`);
-            return callback(new Error("Too many emails from this address, please try again later."));
-        }
+  ////////////////////////////////////////////////////////////
+  //
+  // MAIL FROM Verification and Rate Limiting
+  //
+  ////////////////////////////////////////////////////////////
 
-        console.log(`✅ Accepted MAIL FROM: ${mailFrom}`);
-        callback();
-    },
-    ////////////////////////////////////////////////////////////
-    //
-    // Process the email
-    //
-    ////////////////////////////////////////////////////////////
+  async onMailFrom(address, session, callback) {
+    const mailFrom = address.address;
 
-    onData(stream, session, callback) {
-        let emailData = "";
-        const rcptToEmails = session.envelope.rcptTo.map((recipient) => recipient.address);
+    const allowed = await checkEmailRateLimit(mailFrom); // Apply email-based rate limiting
+    if (!allowed) {
+      console.warn(`🚨 Email Rate limit exceeded for: ${mailFrom}`);
+      return callback(new Error("Too many emails from this address, please try again later."));
+    }
 
-        console.log(`📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(", ")}`);
+    console.log(`✅ Accepted MAIL FROM: ${mailFrom}`);
+    callback();
+  },
 
-        stream.on("data", (chunk) => {
-            emailData += chunk.toString();
+  ////////////////////////////////////////////////////////////
+  //
+  // Process the email
+  //
+  ////////////////////////////////////////////////////////////
+
+  onData(stream, session, callback) {
+    let emailData = "";
+    const rcptToEmails = session.envelope.rcptTo.map((recipient) => recipient.address);
+
+    console.log(`📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(", ")}`);
+
+    stream.on("data", (chunk) => {
+      emailData += chunk.toString();
+    });
+
+    stream.on("end", async () => {
+      try {
+        console.log(`✅ [${new Date().toISOString()}] Email added to queue`);
+        await emailQueue.add("processEmail", {
+          rawEmail: emailData,
+          envelopeTo: rcptToEmails,
         });
-
-        stream.on("end", async () => {
-            try {
-                console.log(`✅ [${new Date().toISOString()}] Email added to queue`);
-                await emailQueue.add("processEmail", {
-                    rawEmail: emailData,
-                    envelopeTo: rcptToEmails,
-                });
-                callback(null);
-            } catch (err) {
-                console.error(`❌ [${new Date().toISOString()}] Error queuing email:`, err);
-                callback(new Error("Email queueing failed"));
-            }
-        });
-    },
+        callback(null);
+      } catch (err) {
+        console.error(`❌ [${new Date().toISOString()}] Error queuing email:`, err);
+        callback(new Error("Email queueing failed"));
+      }
+    });
+  },
 });
 
 ////////////////////////////////////////////////////////////
