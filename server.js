@@ -36,9 +36,10 @@ async function checkRateLimit(ip) {
 ////////////////////////////////////////////////////////////
 
 function isValidHelo(helo) {
-    if (!helo) return false;
-    // Basic check to ensure HELO is not an empty string or contains invalid characters
-    return /^[a-zA-Z0-9.-]+$/.test(helo);
+  console.log(`🔍 Validating HELO: ${helo}`);
+  if (!helo) return false;
+  // Relaxed check allowing underscores
+  return /^[a-zA-Z0-9._-]+$/.test(helo);
 }
 
 ////////////////////////////////////////////////////////////
@@ -74,24 +75,28 @@ const server = new SMTPServer({
   // Connection Handling
   //
   ////////////////////////////////////////////////////////////
-    async onConnect(session, callback) {
-        const ip = session.remoteAddress;
-        console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
+  async onConnect(session, callback) {
+    const ip = session.remoteAddress;
+    console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
 
-        const allowed = await checkRateLimit(ip);
-        if (!allowed) {
-            console.warn(`🚨 Rate limit exceeded for ${ip}`);
-            return callback(new Error("Too many connections, please try again later."));
-        }
+    const allowed = await checkRateLimit(ip);
+    if (!allowed) {
+        console.warn(`🚨 Rate limit exceeded for ${ip}`);
+        return callback(new Error("Too many connections, please try again later."));
+    }
 
-        // Validate HELO
+    // Skip HELO validation if authenticated
+    if (!session.isAuthenticated) {
         if (!isValidHelo(session.helo)) {
             console.warn(`🚨 Invalid HELO/EHLO received from ${ip}`);
             return callback(new Error("Invalid HELO/EHLO"));
         }
+    } else {
+        console.log(`✅ Skipping HELO validation for authenticated user`);
+    }
 
-        callback();
-    },
+    callback();
+  },
 
   ////////////////////////////////////////////////////////////
   //
