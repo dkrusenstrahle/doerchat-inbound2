@@ -1,14 +1,14 @@
 const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
-require("dotenv").config();
+//require("dotenv").config();  // No .env file
 
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
 // Configuration (from environment variables)
-const ACCEPTED_DOMAIN = process.env.ACCEPTED_DOMAIN || "doerchatmail.com"; // e.g., "doerchatmail.com"
-const ALLOWED_MAIL_FROM_DOMAIN = process.env.ALLOWED_MAIL_FROM_DOMAIN || "doerchat.com"; // e.g., "doerchat.com"
+const ACCEPTED_DOMAIN = "doerchatmail.com"; // e.g., "doerchatmail.com"
+const ALLOWED_MAIL_FROM_DOMAIN = "doerchat.com"; // e.g., "doerchat.com"
 
 ////////////////////////////////////////////////////////////
 //
@@ -21,10 +21,10 @@ async function checkRateLimit(ip) {
     const count = await redisConnection.incr(key);
 
     if (count === 1) {
-        await redisConnection.expire(key, process.env.RATE_LIMIT_WINDOW_SECONDS || 300);
+        await redisConnection.expire(key, 300);
     }
 
-    if (count > (process.env.RATE_LIMIT_MAX_CONNECTIONS || 200)) {
+    if (count > (200)) {
         return false; // Block IP
     }
     return true; // Allow IP
@@ -32,15 +32,16 @@ async function checkRateLimit(ip) {
 
 ////////////////////////////////////////////////////////////
 //
-// HELO Validation
+// HELO Validation - NOT NEEDED
 //
 ////////////////////////////////////////////////////////////
-
+/*
 function isValidHelo(helo) {
     if (!helo) return false;
     // Relaxed check allowing underscores and periods
     return /^[a-zA-Z0-9._-]+$/.test(helo);
 }
+*/
 
 ////////////////////////////////////////////////////////////
 //
@@ -160,6 +161,7 @@ const server = new SMTPServer({
 //
 ////////////////////////////////////////////////////////////
 
-server.listen(process.env.SMTP_PORT || 25, process.env.SMTP_HOST || "0.0.0.0", () => {
-    console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${process.env.SMTP_PORT || 25}...`);
+//Use the variables in the script or hardcode them
+server.listen(25, "0.0.0.0", () => {
+    console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${25}...`);
 });

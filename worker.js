@@ -57,7 +57,7 @@ const worker = new Worker(
       }));
 
       console.log("📨 Sending the email to the webhook...");
-      const response = await axios.post(process.env.WEBHOOK_URL, {
+      const response = await axios.post("https://api.doerchat.com/webhook_inbound", {
         account_id: accountId,
         from: fromEmail,
         from_name: fromName,
