@@ -84,14 +84,12 @@ const server = new SMTPServer({
             console.warn(`🚨 Rate limit exceeded for ${ip}`);
             return callback(new Error("Too many connections, please try again later."));
         }
-
-        session.validHelo = false;
         callback();
     },
 
     ////////////////////////////////////////////////////////////
     //
-    // Recipient Verification and HELO Validation
+    // Recipient Verification
     //
     ////////////////////////////////////////////////////////////
     onRcptTo(address, session, callback) {
@@ -105,15 +103,6 @@ const server = new SMTPServer({
         if (!isValidRecipient) {
             console.warn(`❌ Rejected recipient: ${recipient}`);
             return callback(new Error("Recipient address not allowed"));
-        }
-
-        // **Validate HELO here**
-        if (!session.validHelo) {
-            if (!isValidHelo(session.helo)) {
-                console.warn(`🚨 Invalid HELO/EHLO received from ${session.remoteAddress}`);
-                return callback(new Error("Invalid HELO/EHLO"));
-            }
-            session.validHelo = true;
         }
 
         console.log(`✅ Accepted recipient: ${recipient}`);
