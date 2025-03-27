@@ -3,6 +3,7 @@ const { simpleParser } = require("mailparser");
 const { exec } = require("child_process");
 const axios = require("axios");
 const Redis = require("ioredis");
+require("dotenv").config();
 
 ////////////////////////////////////////////////////////////
 //
@@ -21,21 +22,6 @@ const connection = new Redis({
 
 ////////////////////////////////////////////////////////////
 //
-// Utility: Run SpamAssassin Safely
-//
-////////////////////////////////////////////////////////////
-
-const runSpamAssassin = (email) => {
-  return new Promise((resolve, reject) => {
-    exec(`echo ${JSON.stringify(email)} | spamassassin -e`, (err, stdout) => {
-      if (err) return reject(err);
-      resolve(stdout);
-    });
-  });
-};
-
-////////////////////////////////////////////////////////////
-//
 // Job Processor
 //
 ////////////////////////////////////////////////////////////
@@ -48,22 +34,12 @@ const worker = new Worker(
     console.log("================================================");
 
     try {
-      console.log("🚀 Running SpamAssassin...");
-      const spamCheckResult = await runSpamAssassin(job.data.rawEmail);
-
-      if (spamCheckResult.includes("X-Spam-Flag: YES")) {
-        console.warn("🚨 SpamAssassin detected spam, rejecting email.");
-        throw new Error("Spam email detected");
-      }
-
       console.log("📩 Parsing the email...");
       const parsed = await simpleParser(job.data.rawEmail);
 
       // Extract email metadata
-      let accountId = job.data.envelopeTo?.[0]?.split("@")[0] || "unknown";
-      if (accountId === "unknown" && parsed.to?.value?.[0]?.address) {
-        accountId = parsed.to.value[0].address.split("@")[0];
-      }
+      const accountId = job.data.envelopeTo[0].split("@")[0]; // Reliable account ID extraction
+      console.log(`Account ID: ${accountId}`);
 
       let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
       let fromName = parsed.from?.value?.[0]?.name || "";
@@ -81,7 +57,7 @@ const worker = new Worker(
       }));
 
       console.log("📨 Sending the email to the webhook...");
-      const response = await axios.post("https://api.doerchat.com/webhook_inbound", {
+      const response = await axios.post(process.env.WEBHOOK_URL, {
         account_id: accountId,
         from: fromEmail,
         from_name: fromName,

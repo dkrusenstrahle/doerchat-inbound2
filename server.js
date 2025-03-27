@@ -1,29 +1,45 @@
 const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
 const Redis = require("ioredis");
+require("dotenv").config();
 
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
 const emailQueue = new Queue("email-processing", { connection: redisConnection });
 
+// Configuration (from environment variables)
+const ACCEPTED_DOMAIN = process.env.ACCEPTED_DOMAIN || "doerchatmail.com"; // e.g., "doerchatmail.com"
+
 ////////////////////////////////////////////////////////////
 //
-// Custom Rate Limiting Function (DISABLED FOR NOW)
+// Rate Limiting Function
 //
 ////////////////////////////////////////////////////////////
 
-// async function checkRateLimit(ip) {
-//   const key = `rate-limit:${ip}`;
-//   const count = await redisConnection.incr(key);
+async function checkRateLimit(ip) {
+  const key = `rate-limit:${ip}`;
+  const count = await redisConnection.incr(key);
 
-//   if (count === 1) {
-//     await redisConnection.expire(key, 300); // Reset counter after 5 minutes
-//   }
+  if (count === 1) {
+    await redisConnection.expire(key, process.env.RATE_LIMIT_WINDOW_SECONDS || 300);
+  }
 
-//   if (count > 2000) {
-//     return false; // Block IP
-//   }
-//   return true; // Allow IP
-// }
+  if (count > (process.env.RATE_LIMIT_MAX_CONNECTIONS || 200)) {
+    return false; // Block IP
+  }
+  return true; // Allow IP
+}
+
+////////////////////////////////////////////////////////////
+//
+// HELO Validation
+//
+////////////////////////////////////////////////////////////
+
+function isValidHelo(helo) {
+    if (!helo) return false;
+    // Basic check to ensure HELO is not an empty string or contains invalid characters
+    return /^[a-zA-Z0-9.-]+$/.test(helo);
+}
 
 ////////////////////////////////////////////////////////////
 //
@@ -33,26 +49,69 @@ const emailQueue = new Queue("email-processing", { connection: redisConnection }
 
 const server = new SMTPServer({
   logger: true,
-  disableStartTLS: true,
-  authOptional: true,
+  disabledCommands: ['STARTTLS'],
+  authOptional: true, // Still recommended, but can be skipped for simplicity
 
   ////////////////////////////////////////////////////////////
   //
-  // Log when an SMTP connection starts
+  // Authentication Handler (if authOptional is false)
   //
   ////////////////////////////////////////////////////////////
+  async onAuth(auth, session, callback) {
+    // If authOptional is true, this can be removed/simplified
+    // Example (replace with real credentials check):
+    if (auth.username === "testuser" && auth.password === "testpass") {
+      console.log(`✅ Authentication successful for ${auth.username}`);
+      return callback(null, { user: auth.username }); // Success
+    } else {
+      console.warn(`❌ Authentication failed for ${auth.username}`);
+      return callback(new Error("Invalid username or password")); // Failure
+    }
+  },
 
-  async onConnect(session, callback) {
-    const ip = session.remoteAddress;
-    console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
+  ////////////////////////////////////////////////////////////
+  //
+  // Connection Handling
+  //
+  ////////////////////////////////////////////////////////////
+    async onConnect(session, callback) {
+        const ip = session.remoteAddress;
+        console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
 
-    // 🔥 Rate limiting disabled for now
-    // const allowed = await checkRateLimit(ip);
-    // if (!allowed) {
-    //   console.warn(`🚨 Rate limit exceeded for ${ip}`);
-    //   return callback(new Error("Too many connections, please try again later."));
-    // }
+        const allowed = await checkRateLimit(ip);
+        if (!allowed) {
+            console.warn(`🚨 Rate limit exceeded for ${ip}`);
+            return callback(new Error("Too many connections, please try again later."));
+        }
 
+        // Validate HELO
+        if (!isValidHelo(session.helo)) {
+            console.warn(`🚨 Invalid HELO/EHLO received from ${ip}`);
+            return callback(new Error("Invalid HELO/EHLO"));
+        }
+
+        callback();
+    },
+
+  ////////////////////////////////////////////////////////////
+  //
+  // Recipient Verification
+  //
+  ////////////////////////////////////////////////////////////
+  onRcptTo(address, session, callback) {
+    const recipient = address.address;
+
+    // Check if the recipient address matches the expected pattern
+    const isValidRecipient =
+      recipient.endsWith(`@${ACCEPTED_DOMAIN}`) &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/.test(recipient); // Basic UUID check
+
+    if (!isValidRecipient) {
+      console.warn(`❌ Rejected recipient: ${recipient}`);
+      return callback(new Error("Recipient address not allowed"));
+    }
+
+    console.log(`✅ Accepted recipient: ${recipient}`);
     callback();
   },
 
@@ -61,7 +120,6 @@ const server = new SMTPServer({
   // Process the email
   //
   ////////////////////////////////////////////////////////////
-
   onData(stream, session, callback) {
     let emailData = "";
     const rcptToEmails = session.envelope.rcptTo.map((recipient) => recipient.address);
@@ -85,7 +143,7 @@ const server = new SMTPServer({
         callback(new Error("Email queueing failed"));
       }
     });
-  }
+  },
 });
 
 ////////////////////////////////////////////////////////////
@@ -94,6 +152,6 @@ const server = new SMTPServer({
 //
 ////////////////////////////////////////////////////////////
 
-server.listen(25, "0.0.0.0", () => {
-  console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port 25...`);
+server.listen(process.env.SMTP_PORT || 25, process.env.SMTP_HOST || "0.0.0.0", () => {
+  console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${process.env.SMTP_PORT || 25}...`);
 });
