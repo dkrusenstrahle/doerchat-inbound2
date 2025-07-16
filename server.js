@@ -9,7 +9,7 @@ const emailQueue = new Queue("email-processing", { connection: redisConnection }
 const ACCEPTED_DOMAIN = "doerchatmail.com";
 
 const EMAIL_RATE_LIMIT_WINDOW = 300;
-const EMAIL_RATE_LIMIT_MAX = 100;
+const EMAIL_RATE_LIMIT_MAX = 1000;
 
 ////////////////////////////////////////////////////////////
 //
