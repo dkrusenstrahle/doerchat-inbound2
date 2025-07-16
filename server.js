@@ -1,5 +1,6 @@
 const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
+
 const Redis = require("ioredis");
 
 const redisConnection = new Redis({ maxRetriesPerRequest: null });
@@ -24,7 +25,7 @@ async function checkIPRateLimit(ip) {
     await redisConnection.expire(key, EMAIL_RATE_LIMIT_WINDOW);
   }
 
-  if (count > (EMAIL_RATE_LIMIT_MAX)) {
+  if (count > EMAIL_RATE_LIMIT_MAX) {
     return false;
   }
   return true;
@@ -52,7 +53,7 @@ async function checkEmailRateLimit(email) {
 
 const server = new SMTPServer({
   logger: true,
-  disabledCommands: ['STARTTLS'],
+  disabledCommands: ["STARTTLS"],
   authOptional: true,
 
   ////////////////////////////////////////////////////////////
@@ -63,12 +64,16 @@ const server = new SMTPServer({
 
   async onConnect(session, callback) {
     const ip = session.remoteAddress; // or try session.client.remoteAddress
-    console.log(`📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`);
+    console.log(
+      `📥 [${new Date().toISOString()}] Incoming SMTP connection from: ${ip}`
+    );
 
     const allowed = await checkIPRateLimit(ip); // Apply IP-based rate limiting
     if (!allowed) {
       console.warn(`🚨 IP Rate limit exceeded for ${ip}`);
-      return callback(new Error("Too many connections from this IP, please try again later."));
+      return callback(
+        new Error("Too many connections from this IP, please try again later.")
+      );
     }
 
     callback();
@@ -86,7 +91,9 @@ const server = new SMTPServer({
     // Check if the recipient address matches the expected pattern
     const isValidRecipient =
       recipient.endsWith(`@${ACCEPTED_DOMAIN}`) &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/.test(recipient); // Basic UUID check
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/.test(
+        recipient
+      ); // Basic UUID check
 
     if (!isValidRecipient) {
       console.warn(`❌ Rejected recipient: ${recipient}`);
@@ -99,7 +106,7 @@ const server = new SMTPServer({
 
   ////////////////////////////////////////////////////////////
   //
-  // MAIL FROM Verification and Rate Limiting
+  // MAIL FROM Verification and Rate Limining
   //
   ////////////////////////////////////////////////////////////
 
@@ -109,7 +116,9 @@ const server = new SMTPServer({
     const allowed = await checkEmailRateLimit(mailFrom); // Apply email-based rate limiting
     if (!allowed) {
       console.warn(`🚨 Email Rate limit exceeded for: ${mailFrom}`);
-      return callback(new Error("Too many emails from this address, please try again later."));
+      return callback(
+        new Error("Too many emails from this address, please try again later.")
+      );
     }
 
     console.log(`✅ Accepted MAIL FROM: ${mailFrom}`);
@@ -124,9 +133,15 @@ const server = new SMTPServer({
 
   onData(stream, session, callback) {
     let emailData = "";
-    const rcptToEmails = session.envelope.rcptTo.map((recipient) => recipient.address);
+    const rcptToEmails = session.envelope.rcptTo.map(
+      (recipient) => recipient.address
+    );
 
-    console.log(`📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(", ")}`);
+    console.log(
+      `📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(
+        ", "
+      )}`
+    );
 
     stream.on("data", (chunk) => {
       emailData += chunk.toString();
@@ -146,6 +161,41 @@ const server = new SMTPServer({
       }
     });
   },
+
+  ////////////////////////////////////////////////////////////
+  //
+  // Error handling for server itself
+  //
+  ////////////////////////////////////////////////////////////
+
+  onError(err) {
+    console.error(`🚨 [${new Date().toISOString()}] SMTP Server internal error:`, err);
+  },
+
+  onClose(session) {
+    console.log(
+      `🔌 [${new Date().toISOString()}] Connection closed for: ${session.remoteAddress}`
+    );
+  },
+});
+
+////////////////////////////////////////////////////////////
+//
+// Global Unhandled Exception/Rejection Handlers
+//
+////////////////////////////////////////////////////////////
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error(
+    "💣 [FATAL] Unhandled Rejection at:",
+    promise,
+    "reason:",
+    reason
+  );
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("💥 [FATAL] Uncaught Exception:", err);
 });
 
 ////////////////////////////////////////////////////////////
@@ -154,7 +204,6 @@ const server = new SMTPServer({
 //
 ////////////////////////////////////////////////////////////
 
-//Use the variables in the script or hardcode them
 server.listen(25, "0.0.0.0", () => {
   console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${25}...`);
 });
