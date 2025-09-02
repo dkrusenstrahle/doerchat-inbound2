@@ -77,12 +77,6 @@ const worker = new Worker(
         account_id: accountId,
       });
 
-      console.log("accountExists");
-      console.log("accountExists");
-      console.log("accountExists");
-      console.log("accountExists");
-      console.log(accountExists);
-
       if (accountExists.data.data.success) {
         console.log("🔍 Account exists, processing email...");
       } else {
