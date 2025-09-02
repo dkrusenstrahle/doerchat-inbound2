@@ -73,6 +73,23 @@ const worker = new Worker(
       const accountId = job.data.envelopeTo[0].split("@")[0]; // Reliable account ID extraction
       console.log(`Account ID: ${accountId}`);
 
+      const accountExists = await axios.post("https://api.doerchat.com/rest/v1/check-account", {
+        account_id: accountId,
+      });
+
+      console.log("accountExists");
+      console.log("accountExists");
+      console.log("accountExists");
+      console.log("accountExists");
+      console.log(accountExists);
+
+      if (accountExists.data.data.success) {
+        console.log("🔍 Account exists, processing email...");
+      } else {
+        console.log("🔍 Account does not exist, skipping...");
+        return;
+      }
+
       let fromEmail = parsed.from?.value?.[0]?.address || "Unknown Sender";
       let fromName = parsed.from?.value?.[0]?.name || "";
       let toEmail = parsed.to?.value?.[0]?.address || "Unknown Recipient";
