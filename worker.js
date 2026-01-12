@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { Worker } = require("bullmq");
 const { simpleParser } = require("mailparser");
 const { exec } = require("child_process");
@@ -100,19 +101,27 @@ const worker = new Worker(
       }));
 
       console.log("📨 Sending the email to the webhook...");
-      const response = await axios.post("https://api.doerchat.com/webhook_inbound", {
-        account_id: accountId,
-        from: fromEmail,
-        from_name: fromName,
-        to: toEmail,
-        to_name: toName,
-        subject: parsed.subject || "No Subject",
-        body_text: parsed.text || "No Text Content",
-        body_html: parsed.html || "No HTML Content",
-        message_id: messageId,
-        in_reply_to: inReplyTo,
-        attachments: attachmentData,
-      });
+      const response = await axios.post(
+        "https://api.doerchat.com/webhook_inbound",
+        {
+          account_id: accountId,
+          from: fromEmail,
+          from_name: fromName,
+          to: toEmail,
+          to_name: toName,
+          subject: parsed.subject || "No Subject",
+          body_text: parsed.text || "No Text Content",
+          body_html: parsed.html || "No HTML Content",
+          message_id: messageId,
+          in_reply_to: inReplyTo,
+          attachments: attachmentData,
+        },
+        {
+          headers: {
+            "x-webhook-secret": process.env.DOERCHAT_WEBHOOK_SECRET,
+          },
+        }
+      );
 
       console.log(`✅ Webhook sent successfully: ${response.status} ${response.statusText}`);
     } catch (err) {
