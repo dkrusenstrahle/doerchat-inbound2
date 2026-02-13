@@ -125,7 +125,8 @@ pm2 start server.js --name smtp-server || pm2 restart smtp-server
 echo "================================================"
 echo "⚙️ Setting up background job worker..."
 echo "================================================"
-pm2 start worker.js --name email-worker -i max || pm2 restart email-worker
+EMAIL_WORKER_INSTANCES="${EMAIL_WORKER_INSTANCES:-1}"
+pm2 start worker.js --name email-worker -i "$EMAIL_WORKER_INSTANCES" || pm2 restart email-worker
 
 echo "================================================"
 echo "📊 Starting Bull Board Dashboard..."

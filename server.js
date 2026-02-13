@@ -1,15 +1,83 @@
 const { SMTPServer } = require("smtp-server");
 const { Queue } = require("bullmq");
+require("dotenv").config();
 
 const Redis = require("ioredis");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 
-const redisConnection = new Redis({ maxRetriesPerRequest: null });
-const emailQueue = new Queue("email-processing", { connection: redisConnection });
+const redisConnection = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new Redis({ maxRetriesPerRequest: null });
+const emailQueue = new Queue("email-processing", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: parseInt(process.env.EMAIL_JOB_ATTEMPTS || "8", 10),
+    backoff: {
+      type: "exponential",
+      delay: parseInt(process.env.EMAIL_JOB_BACKOFF_MS || "5000", 10),
+    },
+    removeOnComplete: {
+      age: parseInt(process.env.EMAIL_JOB_RETENTION_SECONDS || "86400", 10), // 24h
+      count: 10000,
+    },
+    removeOnFail: {
+      age: parseInt(process.env.EMAIL_JOB_FAIL_RETENTION_SECONDS || "604800", 10), // 7d
+      count: 20000,
+    },
+  },
+});
 
 const ACCEPTED_DOMAIN = "doerchatmail.com";
 
-const EMAIL_RATE_LIMIT_WINDOW = 300;
-const EMAIL_RATE_LIMIT_MAX = 1000;
+const EMAIL_RATE_LIMIT_WINDOW = parseInt(
+  process.env.EMAIL_RATE_LIMIT_WINDOW_SECONDS || "300",
+  10
+);
+const EMAIL_RATE_LIMIT_MAX = parseInt(
+  process.env.EMAIL_RATE_LIMIT_MAX || "1000",
+  10
+);
+
+const MAX_EMAIL_SIZE = parseInt(
+  process.env.MAX_EMAIL_SIZE_BYTES || `${20 * 1024 * 1024}`,
+  10
+);
+
+const spoolDir =
+  process.env.EMAIL_SPOOL_DIR || path.join(process.cwd(), ".spool");
+
+async function cleanupSpoolDir() {
+  const maxAgeSeconds = parseInt(
+    process.env.EMAIL_SPOOL_MAX_AGE_SECONDS || "604800",
+    10
+  ); // 7 days
+  const now = Date.now();
+  try {
+    await fs.promises.mkdir(spoolDir, { recursive: true });
+  } catch (_) {}
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(spoolDir);
+  } catch (_) {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith(".eml"))
+      .map(async (name) => {
+        const full = path.join(spoolDir, name);
+        try {
+          const stat = await fs.promises.stat(full);
+          const ageSeconds = (now - stat.mtimeMs) / 1000;
+          if (ageSeconds > maxAgeSeconds) {
+            await fs.promises.unlink(full);
+          }
+        } catch (_) {}
+      })
+  );
+}
 
 ////////////////////////////////////////////////////////////
 //
@@ -55,6 +123,10 @@ const server = new SMTPServer({
   logger: true,
   disabledCommands: ["STARTTLS"],
   authOptional: true,
+  size: MAX_EMAIL_SIZE,
+  maxClients: parseInt(process.env.SMTP_MAX_CLIENTS || "200", 10),
+  socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || "120000", 10),
+  closeTimeout: parseInt(process.env.SMTP_CLOSE_TIMEOUT_MS || "30000", 10),
 
   ////////////////////////////////////////////////////////////
   //
@@ -132,13 +204,13 @@ const server = new SMTPServer({
   ////////////////////////////////////////////////////////////
 
   onData(stream, session, callback) {
-    let emailData = "";
     let emailSize = 0;
-    const MAX_EMAIL_SIZE = 20 * 1024 * 1024; // 20MB limit
 
     const rcptToEmails = session.envelope.rcptTo.map(
       (recipient) => recipient.address
     );
+    const mailFrom = session.envelope.mailFrom?.address || null;
+    const remoteAddress = session.remoteAddress || null;
 
     console.log(
       `📩 [${new Date().toISOString()}] Email received. Envelope to: ${rcptToEmails.join(
@@ -146,29 +218,111 @@ const server = new SMTPServer({
       )}`
     );
 
+    try {
+      fs.mkdirSync(spoolDir, { recursive: true });
+    } catch (_) {
+      // best-effort; if this fails, write stream creation will fail below
+    }
+
+    const spoolFile = path.join(
+      spoolDir,
+      `${Date.now()}-${crypto.randomUUID()}.eml`
+    );
+    const writeStream = fs.createWriteStream(spoolFile, { flags: "wx" });
+    const hasher = crypto.createHash("sha256");
+    let aborted = false;
+
+    const abort = (err) => {
+      if (aborted) return;
+      aborted = true;
+      try {
+        stream.pause();
+      } catch (_) {}
+      try {
+        writeStream.destroy();
+      } catch (_) {}
+      try {
+        fs.unlinkSync(spoolFile);
+      } catch (_) {}
+      callback(err);
+    };
+
     stream.on("data", (chunk) => {
       emailSize += chunk.length;
       if (emailSize > MAX_EMAIL_SIZE) {
         console.warn(`🚨 Email size limit exceeded (${emailSize} bytes)`);
-        stream.pause();
-        return callback(new Error("Message size exceeds limit (20MB)"));
+        return abort(new Error("Message size exceeds limit (20MB)"));
       }
-      emailData += chunk.toString();
+      hasher.update(chunk);
+      if (!writeStream.write(chunk)) {
+        stream.pause();
+        writeStream.once("drain", () => stream.resume());
+      }
     });
 
     stream.on("end", async () => {
       try {
-        console.log(`✅ [${new Date().toISOString()}] Email added to queue`);
-        await emailQueue.add("processEmail", {
-          rawEmail: emailData,
-          envelopeTo: rcptToEmails,
+        writeStream.end();
+        await new Promise((resolve, reject) => {
+          writeStream.on("finish", resolve);
+          writeStream.on("error", reject);
         });
+
+        const sha256 = hasher.digest("hex");
+        console.log(
+          `✅ [${new Date().toISOString()}] Email spooled (${emailSize} bytes, sha256=${sha256.slice(
+            0,
+            12
+          )}...) and added to queue`
+        );
+
+        try {
+          await emailQueue.add(
+            "processEmail",
+            {
+              emailPath: spoolFile,
+              envelopeTo: rcptToEmails,
+              mailFrom,
+              remoteAddress,
+              sha256,
+              emailSize,
+            },
+            { jobId: sha256 }
+          );
+        } catch (err) {
+          // BullMQ throws if jobId already exists; treat as idempotent success.
+          if (
+            err &&
+            typeof err.message === "string" &&
+            err.message.includes("JobId") &&
+            err.message.includes("already exists")
+          ) {
+            console.warn(
+              `♻️ [${new Date().toISOString()}] Duplicate email detected (sha256=${sha256.slice(
+                0,
+                12
+              )}...), skipping enqueue`
+            );
+            try {
+              fs.unlinkSync(spoolFile);
+            } catch (_) {}
+            callback(null);
+            return;
+          }
+          throw err;
+        }
         callback(null);
       } catch (err) {
         console.error(`❌ [${new Date().toISOString()}] Error queuing email:`, err);
+        try {
+          fs.unlinkSync(spoolFile);
+        } catch (_) {}
         callback(new Error("Email queueing failed"));
       }
     });
+
+    stream.on("error", (err) => abort(err));
+    writeStream.on("error", (err) => abort(err));
   },
 
   ////////////////////////////////////////////////////////////
@@ -213,6 +367,38 @@ process.on("uncaughtException", (err) => {
 //
 ////////////////////////////////////////////////////////////
 
-server.listen(25, "0.0.0.0", () => {
-  console.log(`📡 [${new Date().toISOString()}] SMTP Server listening on port ${25}...`);
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "25", 10);
+const SMTP_HOST = process.env.SMTP_HOST || "0.0.0.0";
+
+server.listen(SMTP_PORT, SMTP_HOST, async () => {
+  console.log(
+    `📡 [${new Date().toISOString()}] SMTP Server listening on ${SMTP_HOST}:${SMTP_PORT}...`
+  );
+  void cleanupSpoolDir().catch(() => {});
+  setInterval(() => {
+    void cleanupSpoolDir().catch(() => {});
+  }, parseInt(process.env.EMAIL_SPOOL_CLEAN_INTERVAL_MS || "3600000", 10)); // hourly
 });
+
+////////////////////////////////////////////////////////////
+//
+// Graceful shutdown
+//
+////////////////////////////////////////////////////////////
+
+async function shutdown(signal) {
+  console.log(`🛑 Received ${signal}, shutting down...`);
+  try {
+    await new Promise((resolve) => server.close(resolve));
+  } catch (_) {}
+  try {
+    await emailQueue.close();
+  } catch (_) {}
+  try {
+    await redisConnection.quit();
+  } catch (_) {}
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
