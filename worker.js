@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { Worker } = require("bullmq");
 const { simpleParser } = require("mailparser");
-const { exec } = require("child_process");
+const { spawn } = require("child_process");
 const axios = require("axios");
 const Redis = require("ioredis");
 
@@ -28,13 +28,31 @@ const connection = new Redis({
 
 const runSpamAssassin = (email) => {
   return new Promise((resolve, reject) => {
-    exec(`echo ${JSON.stringify(email)} | spamassassin -e`, (err, stdout) => {
-      if (err) {
-        console.error("SpamAssassin Error:", err);
-        return reject(err);
+    // Use spawn instead of exec to avoid command injection
+    const child = spawn("spamassassin", ["-e"]);
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data) => {
+      stdout += data;
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data;
+    });
+
+    child.on("close", (code) => {
+      // SpamAssassin -e exits with 1 if spam, but we also want the stdout for the score
+      // We only reject if there's a serious error (stderr or code > 1)
+      if (stderr && code > 1) {
+        console.error("SpamAssassin Error:", stderr);
+        return reject(new Error(`SpamAssassin failed with code ${code}`));
       }
       resolve(stdout);
     });
+
+    child.stdin.write(email);
+    child.stdin.end();
   });
 };
 
@@ -74,9 +92,13 @@ const worker = new Worker(
       const accountId = job.data.envelopeTo[0].split("@")[0]; // Reliable account ID extraction
       console.log(`Account ID: ${accountId}`);
 
-      const accountExists = await axios.post("https://api.doerchat.com/rest/v1/check-account", {
-        account_id: accountId,
-      });
+      const accountExists = await axios.post(
+        "https://api.doerchat.com/rest/v1/check-account",
+        {
+          account_id: accountId,
+        },
+        { timeout: 10000 } // Add 10s timeout
+      );
 
       if (accountExists.data.data.success) {
         console.log("🔍 Account exists, processing email...");
@@ -120,6 +142,7 @@ const worker = new Worker(
           headers: {
             "x-webhook-secret": process.env.DOERCHAT_WEBHOOK_SECRET,
           },
+          timeout: 10000, // Add 10s timeout
         }
       );
 

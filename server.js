@@ -133,6 +133,9 @@ const server = new SMTPServer({
 
   onData(stream, session, callback) {
     let emailData = "";
+    let emailSize = 0;
+    const MAX_EMAIL_SIZE = 20 * 1024 * 1024; // 20MB limit
+
     const rcptToEmails = session.envelope.rcptTo.map(
       (recipient) => recipient.address
     );
@@ -144,6 +147,12 @@ const server = new SMTPServer({
     );
 
     stream.on("data", (chunk) => {
+      emailSize += chunk.length;
+      if (emailSize > MAX_EMAIL_SIZE) {
+        console.warn(`🚨 Email size limit exceeded (${emailSize} bytes)`);
+        stream.pause();
+        return callback(new Error("Message size exceeds limit (20MB)"));
+      }
       emailData += chunk.toString();
     });
 
